@@ -181,6 +181,14 @@
     </p>
 
     <hr />
+    <p class="help"><b>속도</b></p>
+    <select id="speed">
+      <option value="haiku">⚡ 빠르게 — 가장 빠름 (Haiku)</option>
+      <option value="opusfast">🚀 빠르고 좋게 — 요금 2배 (Opus 빠른모드)</option>
+      <option value="opus">🎯 좋게 — 가장 자연스러움 (Opus)</option>
+    </select>
+
+    <hr />
     <p class="help"><b>목소리</b></p>
     <select id="voice"></select>
 
@@ -210,6 +218,7 @@ const $ = (id) => document.getElementById(id);
 const LS_KEY = "eh_apikey";
 const LS_SAVED = "eh_saved";
 const LS_VOICE = "eh_voice";
+const LS_SPEED = "eh_speed";
 
 let mode = "ko2en";
 let busy = false;
@@ -291,6 +300,10 @@ function loadVoices() {
 speechSynthesis.onvoiceschanged = loadVoices;
 loadVoices();
 $("voice").onchange = (e) => localStorage.setItem(LS_VOICE, e.target.value);
+
+const savedSpeed = localStorage.getItem(LS_SPEED);
+if (savedSpeed) $("speed").value = savedSpeed;
+$("speed").onchange = (e) => localStorage.setItem(LS_SPEED, e.target.value);
 
 function speak(text) {
   speechSynthesis.cancel();
@@ -378,17 +391,17 @@ const SYSTEM = `너는 한국인 직장인의 영어 도우미다. 업무 영어
 - fix: main 에 무엇이 틀렸는지 한국어로 짚어 준다. 이 사람은 관사 누락, 전치사, 단수/복수, 주어-동사 일치를 특히 자주 틀린다. items 3개는 고친 문장 — 원문 구조를 최대한 살린 것부터 더 자연스러운 것 순.
 
 규칙
+- 급할 때 보는 화면이다. 전부 짧게 쓴다. 군더더기 없이.
 - en 은 영어만 쓴다. ko 는 그 영어의 한국어 뜻.
-- note 는 한국어로 짧게: 언제 쓰는 말인지, 어떤 느낌인지, 조심할 점.
+- note 는 한 줄. 언제 쓰는 말인지 또는 조심할 점 하나만.
 - label 은 짧은 한국어 꼬리표 (예: 격식, 보통, 캐주얼, 예문 1, 최소 수정).
-- understood 는 입력을 어떻게 이해했는지 한국어 한 줄.
-- tip 은 한국어 한두 문장. 발음 주의점이나 흔한 실수. 없으면 빈 문자열.
+- main 은 두 문장 이내. ko2en 모드에서는 빈 문자열로 둔다.
+- tip 은 한 문장. 발음 주의점이나 흔한 실수. 없으면 빈 문자열.
 - 설명은 전부 쉬운 한국어로. 문법 용어를 쓰면 괄호로 풀어 준다.`;
 
 const SCHEMA = {
   type: "object",
   properties: {
-    understood: { type: "string" },
     main: { type: "string" },
     items: {
       type: "array",
@@ -406,9 +419,64 @@ const SCHEMA = {
     },
     tip: { type: "string" },
   },
-  required: ["understood", "main", "items", "tip"],
+  required: ["main", "items", "tip"],
   additionalProperties: false,
 };
+
+/* 아직 다 안 온 JSON 에서 완성된 조각만 꺼낸다 */
+function scanString(raw, key) {
+  const m = new RegExp('"' + key + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"').exec(raw);
+  if (!m) return null;
+  try { return JSON.parse('"' + m[1] + '"'); } catch (e) { return null; }
+}
+function scanItems(raw) {
+  const k = raw.indexOf('"items"');
+  if (k < 0) return [];
+  const start = raw.indexOf("[", k);
+  if (start < 0) return [];
+  const out = [];
+  let depth = 0, objStart = -1, inStr = false, esc = false;
+  for (let i = start + 1; i < raw.length; i++) {
+    const c = raw[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === "{") { if (depth === 0) objStart = i; depth++; }
+    else if (c === "}") {
+      depth--;
+      if (depth === 0 && objStart >= 0) {
+        try { out.push(JSON.parse(raw.slice(objStart, i + 1))); } catch (e) { /* 아직 미완성 */ }
+        objStart = -1;
+      }
+    } else if (c === "]" && depth === 0) break;
+  }
+  return out;
+}
+
+function buildParams(text) {
+  const p = {
+    max_tokens: 2000,
+    system: SYSTEM,
+    output_config: { format: { type: "json_schema", schema: SCHEMA } },
+    messages: [{ role: "user", content: "모드: " + mode + "\n입력: " + text }],
+  };
+  const pick = $("speed").value;
+  if (pick === "haiku") {
+    p.model = "claude-haiku-4-5";
+  } else {
+    p.model = "claude-opus-5";
+    p.output_config.effort = "low";
+    if (pick === "opusfast") {
+      p.speed = "fast";
+      p.betas = ["fast-mode-2026-02-01"];
+    }
+  }
+  return p;
+}
 
 async function ask() {
   if (busy) return;
@@ -424,23 +492,47 @@ async function ask() {
   $("status").textContent = "찾는 중…";
   const t0 = performance.now();
 
-  try {
-    const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 1 });
-    const res = await client.messages.create({
-      model: "claude-opus-5",
-      max_tokens: 2000,
-      system: SYSTEM,
-      output_config: {
-        effort: "low",
-        format: { type: "json_schema", schema: SCHEMA },
-      },
-      messages: [{ role: "user", content: "모드: " + mode + "\n입력: " + text }],
-    });
+  let raw = "";
+  let shown = 0;
+  let firstAt = 0;
+  const mainEl = document.createElement("div");
+  mainEl.className = "main";
+  mainEl.style.display = "none";
+  $("out").appendChild(mainEl);
 
-    let raw = "";
-    for (const b of res.content) if (b.type === "text") raw += b.text;
-    render(JSON.parse(raw));
-    $("status").textContent = ((performance.now() - t0) / 1000).toFixed(1) + "초";
+  const onChunk = () => {
+    const m = scanString(raw, "main");
+    if (m && mainEl.textContent !== m) { mainEl.textContent = m; mainEl.style.display = ""; }
+    const items = scanItems(raw);
+    while (shown < items.length) {
+      if (!firstAt) {
+        firstAt = performance.now();
+        $("status").textContent = "첫 답 " + ((firstAt - t0) / 1000).toFixed(1) + "초…";
+      }
+      $("out").appendChild(itemCard(items[shown]));
+      shown++;
+    }
+  };
+
+  try {
+    const params = buildParams(text);
+    const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 1 });
+    const target = params.betas ? client.beta.messages : client.messages;
+    const stream = target.stream(params).on("text", (t) => { raw += t; onChunk(); });
+    await stream.finalMessage();
+
+    onChunk();
+    const tip = scanString(raw, "tip");
+    if (tip) {
+      const t = document.createElement("div");
+      t.className = "tip";
+      t.textContent = "💡 " + tip;
+      $("out").appendChild(t);
+    }
+    if (!shown) throw new Error("답이 비어서 왔습니다. 다시 눌러 보세요.");
+    $("status").textContent =
+      (firstAt ? "첫 답 " + ((firstAt - t0) / 1000).toFixed(1) + "초 · " : "") +
+      "전체 " + ((performance.now() - t0) / 1000).toFixed(1) + "초";
   } catch (err) {
     $("status").className = "status err";
     $("status").textContent = "안 됐습니다: " + (err && err.message ? err.message : String(err));
@@ -450,60 +542,34 @@ async function ask() {
   }
 }
 
-function render(d) {
-  const out = $("out");
-  out.innerHTML = "";
+function itemCard(it) {
+  const card = document.createElement("div");
+  card.className = "item";
+  card.innerHTML = '<span class="label"></span><div class="en"></div><div class="ko"></div><div class="note"></div><div class="acts"></div>';
+  card.querySelector(".label").textContent = it.label || "";
+  const enEl = card.querySelector(".en");
+  enEl.textContent = it.en;
+  enEl.onclick = () => bigShow(it.en);
+  card.querySelector(".ko").textContent = it.ko || "";
+  card.querySelector(".note").textContent = it.note || "";
 
-  if (d.understood) {
-    const u = document.createElement("div");
-    u.className = "understood";
-    u.textContent = "· " + d.understood;
-    out.appendChild(u);
-  }
-  if (d.main) {
-    const m = document.createElement("div");
-    m.className = "main";
-    m.textContent = d.main;
-    out.appendChild(m);
-  }
-
-  (d.items || []).forEach((it) => {
-    const card = document.createElement("div");
-    card.className = "item";
-    card.innerHTML = '<span class="label"></span><div class="en"></div><div class="ko"></div><div class="note"></div><div class="acts"></div>';
-    card.querySelector(".label").textContent = it.label || "";
-    const enEl = card.querySelector(".en");
-    enEl.textContent = it.en;
-    enEl.onclick = () => bigShow(it.en);
-    card.querySelector(".ko").textContent = it.ko || "";
-    card.querySelector(".note").textContent = it.note || "";
-
-    const acts = card.querySelector(".acts");
-    acts.appendChild(mkBtn("🔊 듣기", () => speak(it.en)));
-    acts.appendChild(mkBtn("📋 복사", async (e) => {
-      try {
-        await navigator.clipboard.writeText(it.en);
-        e.target.textContent = "복사됨";
-        setTimeout(() => { e.target.textContent = "📋 복사"; }, 1200);
-      } catch (err) { /* 클립보드 막힌 환경 */ }
-    }));
-    const sv = mkBtn(isSaved(it.en) ? "⭐ 저장됨" : "☆ 저장", (e) => {
-      const now = toggleSave(it);
-      e.target.textContent = now ? "⭐ 저장됨" : "☆ 저장";
-      e.target.classList.toggle("saved", now);
-    });
-    if (isSaved(it.en)) sv.classList.add("saved");
-    acts.appendChild(sv);
-
-    out.appendChild(card);
+  const acts = card.querySelector(".acts");
+  acts.appendChild(mkBtn("🔊 듣기", () => speak(it.en)));
+  acts.appendChild(mkBtn("📋 복사", async (e) => {
+    try {
+      await navigator.clipboard.writeText(it.en);
+      e.target.textContent = "복사됨";
+      setTimeout(() => { e.target.textContent = "📋 복사"; }, 1200);
+    } catch (err) { /* 클립보드 막힌 환경 */ }
+  }));
+  const sv = mkBtn(isSaved(it.en) ? "⭐ 저장됨" : "☆ 저장", (e) => {
+    const now = toggleSave(it);
+    e.target.textContent = now ? "⭐ 저장됨" : "☆ 저장";
+    e.target.classList.toggle("saved", now);
   });
-
-  if (d.tip) {
-    const t = document.createElement("div");
-    t.className = "tip";
-    t.textContent = "💡 " + d.tip;
-    out.appendChild(t);
-  }
+  if (isSaved(it.en)) sv.classList.add("saved");
+  acts.appendChild(sv);
+  return card;
 }
 
 $("go").onclick = ask;
