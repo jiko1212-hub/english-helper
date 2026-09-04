@@ -175,6 +175,10 @@
       <button class="iconbtn" id="keySave">저장</button>
     </div>
     <p class="help" id="keyState"></p>
+    <p class="help">
+      <button class="iconbtn" id="keyShow">👁 저장된 키 보기</button>
+      <button class="iconbtn" id="keyCopy">📋 복사</button>
+    </p>
 
     <hr />
     <p class="help"><b>목소리</b></p>
@@ -248,6 +252,25 @@ $("keySave").onclick = () => {
   $("key").value = "";
   showKeyState();
   alert(v ? "저장했습니다." : "키를 지웠습니다.");
+};
+$("keyShow").onclick = () => {
+  const k = getKey();
+  if (!k) { $("keyState").textContent = "저장된 키가 없습니다."; return; }
+  $("keyState").textContent = k;
+  $("keyState").style.wordBreak = "break-all";
+  $("keyState").style.fontFamily = "monospace";
+  $("keyState").style.userSelect = "text";
+};
+$("keyCopy").onclick = async (e) => {
+  const k = getKey();
+  if (!k) return;
+  try {
+    await navigator.clipboard.writeText(k);
+    e.target.textContent = "복사됨";
+    setTimeout(() => { e.target.textContent = "📋 복사"; }, 1500);
+  } catch (err) {
+    $("keyState").textContent = "복사가 막혔습니다. 위 키를 손으로 긁어서 복사하세요.";
+  }
 };
 showKeyState();
 
