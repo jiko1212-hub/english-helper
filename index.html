@@ -4,20 +4,26 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="theme-color" content="#0f172a" />
-<title>영어 도우미</title>
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Translator" />
+<meta name="theme-color" content="#2563eb" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<link rel="icon" href="icon-192.png" />
+<title>English Translator</title>
 <style>
   :root {
-    --bg: #0f172a;
-    --card: #1e293b;
-    --card-2: #273449;
-    --text: #e2e8f0;
-    --muted: #94a3b8;
-    --accent: #38bdf8;
-    --accent-2: #34d399;
-    --border: #334155;
-    --warn: #fbbf24;
+    --bg: #f4f6fa;
+    --card: #ffffff;
+    --card-2: #f1f5f9;
+    --text: #0f172a;
+    --muted: #64748b;
+    --accent: #2563eb;
+    --accent-2: #10b981;
+    --border: #e2e8f0;
+    --warn: #d97706;
+    --onaccent: #ffffff;
+    --shadow: 0 1px 2px rgba(15,23,42,0.06), 0 1px 3px rgba(15,23,42,0.04);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; }
@@ -36,7 +42,7 @@
     background: var(--card); color: var(--muted); border: 1px solid var(--border);
     border-radius: 10px; padding: 8px 11px; font-size: 0.95rem; cursor: pointer;
   }
-  .iconbtn.on { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+  .iconbtn.on { color: var(--onaccent); background: var(--accent); border-color: var(--accent); }
 
   .modes { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto; padding-bottom: 2px; }
   .modes button {
@@ -44,15 +50,15 @@
     border: 1px solid var(--border); border-radius: 999px;
     padding: 7px 13px; font-size: 0.85rem; cursor: pointer; white-space: nowrap;
   }
-  .modes button.on { background: var(--accent); color: #0f172a; border-color: var(--accent); font-weight: 600; }
+  .modes button.on { background: var(--accent); color: var(--onaccent); border-color: var(--accent); font-weight: 600; }
 
-  .inputbox { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; }
+  .inputbox { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; box-shadow: var(--shadow); }
   textarea {
     width: 100%; background: transparent; color: var(--text); border: none;
     resize: none; font-size: 1.05rem; line-height: 1.5; outline: none;
     font-family: inherit; min-height: 76px;
   }
-  textarea::placeholder { color: #64748b; }
+  textarea::placeholder { color: #94a3b8; }
   .inputbar { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
   .mic {
     background: var(--card-2); color: var(--text); border: 1px solid var(--border);
@@ -61,13 +67,13 @@
   .mic.rec { background: #dc2626; border-color: #dc2626; color: #fff; animation: pulse 1s infinite; }
   @keyframes pulse { 50% { opacity: 0.55; } }
   .go {
-    margin-left: auto; background: var(--accent); color: #0f172a; border: none;
+    margin-left: auto; background: var(--accent); color: var(--onaccent); border: none;
     border-radius: 10px; padding: 11px 22px; font-size: 1rem; font-weight: 700; cursor: pointer;
   }
   .go:disabled { opacity: 0.5; }
 
   .status { color: var(--muted); font-size: 0.88rem; margin: 14px 2px; }
-  .status.err { color: #fca5a5; line-height: 1.6; }
+  .status.err { color: #b91c1c; line-height: 1.6; }
   .understood { color: var(--muted); font-size: 0.85rem; margin: 14px 2px 6px; }
   .main {
     background: var(--card-2); border: 1px solid var(--border); border-left: 3px solid var(--accent-2);
@@ -77,9 +83,10 @@
   .item {
     background: var(--card); border: 1px solid var(--border);
     border-radius: 14px; padding: 13px; margin-bottom: 10px;
+    box-shadow: var(--shadow);
   }
   .label {
-    display: inline-block; font-size: 0.72rem; color: var(--bg); background: var(--muted);
+    display: inline-block; font-size: 0.72rem; color: #fff; background: var(--muted);
     border-radius: 999px; padding: 2px 9px; margin-bottom: 8px; font-weight: 700;
   }
   .item .en {
@@ -96,8 +103,8 @@
   .acts button:active { background: var(--border); }
   .acts button.saved { color: var(--warn); border-color: var(--warn); }
   .tip {
-    background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.35);
-    border-radius: 10px; padding: 11px 13px; font-size: 0.87rem; line-height: 1.55; color: #fde68a;
+    background: #fffbeb; border: 1px solid #fcd34d;
+    border-radius: 10px; padding: 11px 13px; font-size: 0.87rem; line-height: 1.55; color: #92400e;
   }
 
   #show {
@@ -111,7 +118,7 @@
   .panel.on { display: block; }
   .saveitem {
     background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-    padding: 11px 13px; margin-bottom: 8px;
+    padding: 11px 13px; margin-bottom: 8px; box-shadow: var(--shadow);
   }
   .saveitem .en { font-size: 1.02rem; font-weight: 600; margin-bottom: 3px; }
   .saveitem .ko { color: var(--muted); font-size: 0.85rem; }
@@ -137,7 +144,7 @@
 <div class="wrap">
 
   <header>
-    <h1 id="title">영어 도우미</h1>
+    <h1 id="title">English Translator</h1>
     <button class="iconbtn" id="tabSaved" title="저장함">⭐</button>
     <button class="iconbtn" id="tabSet" title="설정">⚙️</button>
   </header>
@@ -203,7 +210,7 @@
 
     <hr />
     <p class="help">
-      <button class="iconbtn" id="wipe" style="color:#fca5a5;border-color:#7f1d1d">저장함 전체 비우기</button>
+      <button class="iconbtn" id="wipe" style="color:#b91c1c;border-color:#fecaca">저장함 전체 비우기</button>
     </p>
   </div>
 
@@ -244,7 +251,7 @@ function tab(name) {
   $("pSet").classList.toggle("on", name === "set");
   $("tabSaved").classList.toggle("on", name === "saved");
   $("tabSet").classList.toggle("on", name === "set");
-  $("title").textContent = name === "saved" ? "저장함" : name === "set" ? "설정" : "영어 도우미";
+  $("title").textContent = name === "saved" ? "저장함" : name === "set" ? "설정" : "English Translator";
   if (name === "saved") renderSaved();
 }
 $("tabSaved").onclick = () => tab($("pSaved").classList.contains("on") ? "main" : "saved");
@@ -547,6 +554,12 @@ $("go").onclick = ask;
 $("q").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) ask();
 });
+
+/* 홈 화면에 추가했을 때 앱처럼 뜨게 하는 부분.
+   https 로 열었을 때만 동작하고, 파일로 열면 그냥 넘어간다. */
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
 </script>
 </body>
 </html>
