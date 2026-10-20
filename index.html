@@ -50,6 +50,7 @@
     border: 1px solid var(--border); border-radius: 999px;
     padding: 7px 13px; font-size: 0.85rem; cursor: pointer; white-space: nowrap;
   }
+  .item.ex { margin: -6px 0 20px 22px; border-left: 3px solid var(--accent); border-top-left-radius: 0; }
   .modes button.on { background: var(--accent); color: var(--onaccent); border-color: var(--accent); font-weight: 600; }
 
   .inputbox { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; box-shadow: var(--shadow); }
@@ -428,13 +429,14 @@ A 줄 3개는 "입력 전체를 말하는 서로 다른 방법" 3가지이지, �
   입력이 여러 문장이면 A 줄 하나가 그 여러 문장을 다 담는다.
 - en2ko: M 줄에 그 영어의 뜻을 쉬운 한국어로. A 줄 3개는 이어서 내가 할 수 있는 영어 대답인데
   서로 다른 반응으로 준다 (예: 맞장구, 되묻기, 시간 벌기). 꼬리표는 어떤 반응인지 쓴다.
-- word: 먼저 W 줄을 2~3개 쓰고, 그 다음 M 줄, 그 다음 A 줄 3개를 쓴다.
+- word: 이 모드는 위의 "A 줄은 정확히 3개" 대신 아래 순서를 따른다.
+  맨 먼저 M 줄 하나 (입력한 말의 뜻과 쓰임을 짧게).
+  그 다음 단어 2~3개를 "W 줄 하나 + 바로 그 단어를 쓴 A 줄 하나" 짝으로 쓴다.
+  즉 M, W, A, W, A, (W, A) 순서다. A 줄은 바로 위 W 단어가 꼭 들어간 예문이다.
   W 줄 형식: W|English word|한국어 뜻|쓰임과 다른 단어와의 차이 한 줄
-  입력이 한국어면 W 줄은 그 뜻에 맞는 영어 단어·표현 2~3개 (가장 흔한 것부터).
-  입력이 영어면 W 줄은 그 말 대신 비슷하게 쓸 수 있는 영어 단어·표현 2~3개 (입력한 말 자체는 빼고).
-  M 줄에는 입력한 말의 뜻과 쓰임을 짧게.
-  A 줄 3개는 서로 다른 상황의 예문이고, 되도록 W 줄의 단어들을 나눠 쓴다.
-  꼬리표는 그 상황 (예: 회사 메일, 공항에서, 친구끼리).
+  입력이 한국어면 W 는 그 뜻에 맞는 영어 단어·표현 (가장 흔한 것부터).
+  입력이 영어면 W 는 그 말 대신 비슷하게 쓸 수 있는 영어 단어·표현 (입력한 말 자체는 빼고).
+  A 줄 꼬리표는 그 상황 (예: 회사 메일, 공항에서, 친구끼리).
 - fix: M 줄은 판정으로 시작한다. 틀린 데가 없으면 "문법은 맞습니다." 로 시작하고,
   그래도 어색한 점이 있으면 이어서 짚는다. 틀렸으면 뭐가 왜 틀렸는지 짧게 짚는다.
   이 사람은 관사 누락, 전치사, 단수/복수, 주어-동사 일치를 자주 틀린다.
@@ -449,12 +451,14 @@ function renderLine(line) {
   const kind = p[0].trim();
 
   if (kind === "A" && p.length >= 3) {
-    return itemCard({
+    const card = itemCard({
       label: (p[1] || "").trim(),
       en: (p[2] || "").trim(),
       ko: (p[3] || "").trim(),
       note: p.slice(4).join(" ").trim(),
     });
+    if (mode === "word") card.classList.add("ex"); // 바로 위 단어의 예문
+    return card;
   }
   if (kind === "W" && p.length >= 2) {
     return itemCard({
