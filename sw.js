@@ -1,6 +1,6 @@
 /* 앱 껍데기를 저장해 둬서 인터넷이 느려도 화면은 바로 뜨게 한다.
    답을 찾는 것(api.anthropic.com)은 인터넷이 필요하므로 캐시하지 않는다. */
-const CACHE = "translator-v1";
+const CACHE = "translator-v2";
 const SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
