@@ -139,6 +139,15 @@
     border: 1px solid var(--border); border-radius: 10px; padding: 10px; font-size: 0.9rem;
   }
   hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+  .follow { margin-top: 18px; display: none; }
+  .follow.show { display: block; }
+  .follow .ftitle { color: var(--muted); font-size: 0.85rem; margin: 0 2px 8px; font-weight: 600; }
+  .follow textarea { min-height: 48px; }
+  .myq {
+    margin: 14px 0 8px auto; max-width: 85%; width: fit-content;
+    background: var(--accent); color: var(--onaccent); border-radius: 14px 14px 4px 14px;
+    padding: 9px 13px; font-size: 0.95rem; line-height: 1.5; white-space: pre-wrap;
+  }
 </style>
 </head>
 <body>
@@ -170,6 +179,18 @@
 
     <div class="status" id="status"></div>
     <div id="out"></div>
+
+    <div class="follow" id="follow">
+      <div id="thread"></div>
+      <div class="ftitle">💬 이 답에 대해 더 물어보기</div>
+      <div class="inputbox">
+        <textarea id="fq" placeholder="예: stay committed 말고 뭐라고 해야 해?"></textarea>
+        <div class="inputbar">
+          <button class="go" id="fgo">묻기</button>
+        </div>
+      </div>
+      <div class="status" id="fstatus"></div>
+    </div>
   </div>
 
   <div class="panel" id="pSaved">
@@ -446,7 +467,14 @@ A 줄 3개는 "입력 전체를 말하는 서로 다른 방법" 3가지이지, �
   문법이 맞으면 첫 A 줄의 꼬리표는 "그대로 OK" 로 하고 원문을 한 글자도 바꾸지 않고 그대로 쓴다.
   문법이 이미 맞더라도 A 줄 3개는 반드시 준다. 더 자연스러운 말을 보여주는 것이 이 모드의 목적이다.
 
-- 한 줄 설명과 M 줄은 쉬운 한국어로 짧게. 문법 용어를 쓰면 괄호로 풀어 준다.`;
+- 한 줄 설명과 M 줄은 쉬운 한국어로 짧게. 문법 용어를 쓰면 괄호로 풀어 준다.
+
+이어서 묻기
+사용자 말이 "[이어서 묻기]" 로 시작하면, 위 대화(앞의 답)에 대한 추가 질문이다.
+이때는 위의 A/M/W/T 형식을 쓰지 않는다. 대신 이렇게 쓴다.
+- 쉬운 한국어로 바로 답한다. 인사·되풀이 없이 3~8줄.
+- 추천하는 영어 표현은 한 줄씩 따로 E|English|한국어 뜻|한 줄 설명 형식으로 쓴다 (보통 1~3개).
+- 나머지 설명 줄은 그냥 한국어 문장으로 쓴다. 칸 안에 | 를 쓰지 않는다.`;
 
 /* "A|꼬리표|영어|뜻|설명" 한 줄을 화면에 붙인다 */
 function renderLine(line) {
@@ -486,11 +514,11 @@ function renderLine(line) {
   return null; // 형식에 안 맞는 줄은 버린다
 }
 
-function buildParams(text) {
+function buildParams(messages) {
   const p = {
     max_tokens: 1200,
     system: SYSTEM,
-    messages: [{ role: "user", content: "모드: " + mode + "\n입력: " + text }],
+    messages,
   };
   const pick = $("speed").value;
   if (pick === "haiku") {
@@ -523,8 +551,10 @@ async function ask() {
   busy = true;
   $("go").disabled = true;
   $("out").innerHTML = "";
+  resetFollow();
   $("status").className = "status";
   $("status").textContent = "찾는 중…";
+  let full = "";
   const t0 = performance.now();
 
   let buf = "";       // 아직 줄바꿈을 못 만난 꼬리
@@ -547,12 +577,14 @@ async function ask() {
   };
 
   try {
-    const params = buildParams(text);
+    const firstMsg = { role: "user", content: "모드: " + mode + "\n입력: " + text };
+    const params = buildParams([firstMsg]);
     const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 1 });
     const target = params.betas ? client.beta.messages : client.messages;
 
     const stream = target.stream(params).on("text", (t) => {
       if (!openedAt) openedAt = performance.now();
+      full += t;
       buf += t;
       let nl;
       while ((nl = buf.indexOf("\n")) >= 0) {
@@ -564,6 +596,8 @@ async function ask() {
     if (buf.trim()) pushLine(buf);
 
     if (!cards) throw new Error("답이 비어서 왔습니다. 다시 눌러 보세요.");
+    convo = [firstMsg, { role: "assistant", content: full }];
+    $("follow").classList.add("show");
     $("status").textContent = autoNote +
       "연결 " + sec(t0, openedAt) + "초 · 첫 답 " + sec(t0, firstAt) + "초 · 전체 " + sec(t0, performance.now()) + "초";
   } catch (err) {
@@ -605,8 +639,94 @@ function itemCard(it) {
   return card;
 }
 
+/* ── 이어서 묻기: 방금 답을 기억한 채로 추가 질문을 주고받는다 ── */
+let convo = [];
+
+function resetFollow() {
+  convo = [];
+  $("thread").innerHTML = "";
+  $("fq").value = "";
+  $("fstatus").textContent = "";
+  $("fstatus").className = "status";
+  $("follow").classList.remove("show");
+}
+
+async function followUp() {
+  if (busy || !convo.length) return;
+  const text = $("fq").value.trim();
+  if (!text) return;
+  const key = getKey();
+  if (!key) { tab("set"); $("keyState").textContent = "먼저 API 키를 넣어 주세요."; return; }
+
+  busy = true;
+  $("fgo").disabled = true;
+  $("fq").value = "";
+  const me = document.createElement("div");
+  me.className = "myq";
+  me.textContent = text;
+  $("thread").appendChild(me);
+  $("fstatus").className = "status";
+  $("fstatus").textContent = "답 쓰는 중…";
+
+  const userMsg = { role: "user", content: "[이어서 묻기] " + text };
+  let full = "", buf = "", bubble = null, shown = 0;
+  const pushLine = (line) => {
+    line = line.trim();
+    if (!line) return;
+    const p = line.split("|");
+    if (p[0].trim() === "E" && p.length >= 2) {
+      $("thread").appendChild(itemCard({
+        label: "추천 표현",
+        en: (p[1] || "").trim(),
+        ko: (p[2] || "").trim(),
+        note: p.slice(3).join(" ").trim(),
+      }));
+      bubble = null;
+    } else {
+      if (!bubble) {
+        bubble = document.createElement("div");
+        bubble.className = "main";
+        $("thread").appendChild(bubble);
+      }
+      bubble.textContent += (bubble.textContent ? "\n" : "") + line;
+    }
+    shown++;
+  };
+
+  try {
+    const params = buildParams([...convo, userMsg]);
+    const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 1 });
+    const target = params.betas ? client.beta.messages : client.messages;
+    const stream = target.stream(params).on("text", (t) => {
+      full += t;
+      buf += t;
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        pushLine(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+      }
+    });
+    await stream.finalMessage();
+    if (buf.trim()) pushLine(buf);
+    if (!shown) throw new Error("답이 비어서 왔습니다. 다시 물어봐 주세요.");
+    convo.push(userMsg, { role: "assistant", content: full });
+    $("fstatus").textContent = "";
+  } catch (err) {
+    $("fq").value = text; // 실패하면 질문을 되돌려 놓는다
+    $("fstatus").className = "status err";
+    $("fstatus").textContent = "안 됐습니다: " + (err && err.message ? err.message : String(err));
+  } finally {
+    busy = false;
+    $("fgo").disabled = false;
+  }
+}
+
 $("go").onclick = ask;
-$("clear").onclick = () => { $("q").value = ""; $("out").innerHTML = ""; $("status").textContent = ""; $("status").className = "status"; $("q").focus(); };
+$("fgo").onclick = followUp;
+$("fq").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) followUp();
+});
+$("clear").onclick = () => { $("q").value = ""; $("out").innerHTML = ""; resetFollow(); $("status").textContent = ""; $("status").className = "status"; $("q").focus(); };
 $("q").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) ask();
 });
